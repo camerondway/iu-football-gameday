@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    @apply bg-hoosier-cream text-slate-900 font-sans antialiased;
+  }
+
+  *,
+  *::before,
+  *::after {
+    @apply box-border;
+  }
+
+  body {
+    @apply m-0 min-h-screen bg-gradient-to-b from-hoosier-cream via-white to-slate-50;
+  }
+
+  a {
+    @apply text-hoosier-red underline decoration-transparent transition-colors duration-200;
+  }
+
+  a:hover {
+    @apply decoration-current;
+  }
+
+  #root {
+    @apply w-full;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    @apply font-sans;
+  }
+}
