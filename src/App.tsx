@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 
 type Player = {
@@ -19,6 +20,10 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const makeStaggerStyle = (index: number): CSSProperties => ({
+    animationDelay: `${Math.min(index, 12) * 45}ms`,
+  })
 
   useEffect(() => {
     const controller = new AbortController()
@@ -139,7 +144,10 @@ function App() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-8 px-4 py-8 sm:px-8 lg:px-12">
-      <header className="flex flex-col gap-6 rounded-3xl bg-white/90 p-6 shadow-xl ring-1 ring-slate-100 md:flex-row md:items-start md:justify-between md:gap-10 lg:p-8">
+      <header
+        className="animate-fade-in-up flex flex-col gap-6 rounded-3xl bg-white/90 p-6 shadow-xl ring-1 ring-slate-100 md:flex-row md:items-start md:justify-between md:gap-10 lg:p-8"
+        style={{ animationDelay: '80ms' }}
+      >
         <div className="flex-1 space-y-3">
           <p className="inline-flex items-center gap-2 text-sm font-medium uppercase tracking-[0.3em] text-slate-500">
             <span className="h-2 w-2 rounded-full bg-hoosier-red" aria-hidden="true" />
@@ -166,15 +174,18 @@ function App() {
         </label>
       </header>
 
-      <section className="rounded-3xl bg-white/95 p-4 shadow-xl ring-1 ring-slate-100 sm:p-6">
+      <section
+        className="animate-fade-in-up rounded-3xl bg-white/95 p-4 shadow-xl ring-1 ring-slate-100 sm:p-6"
+        style={{ animationDelay: '140ms' }}
+      >
         {loading && (
           <div className="flex h-40 items-center justify-center text-base font-medium text-slate-600">
-            Loading roster…
+            <span className="animate-pulse">Loading roster…</span>
           </div>
         )}
 
         {!loading && error && (
-          <div className="flex h-40 items-center justify-center text-center text-base font-semibold text-hoosier-red">
+          <div className="animate-fade-in-up flex h-40 items-center justify-center text-center text-base font-semibold text-hoosier-red">
             {error}
           </div>
         )}
@@ -182,7 +193,7 @@ function App() {
         {!loading && !error && (
           <div className="space-y-6">
             <div className="hidden md:block">
-              <div className="max-h-[65vh] overflow-auto rounded-2xl border border-slate-200">
+              <div className="animate-fade-in-up max-h-[65vh] overflow-auto rounded-2xl border border-slate-200" style={{ animationDelay: '220ms' }}>
                 <table className="min-w-full text-left text-sm text-slate-700">
                   <thead>
                     <tr className="bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -217,10 +228,11 @@ function App() {
                         </td>
                       </tr>
                     ) : (
-                      filteredPlayers.map((player) => (
+                      filteredPlayers.map((player, index) => (
                         <tr
                           key={player.id}
-                          className="odd:bg-white even:bg-slate-50/60 transition hover:bg-hoosier-red/5"
+                          className="animate-fade-in-up odd:bg-white even:bg-slate-50/60 transition hover:bg-hoosier-red/5"
+                          style={makeStaggerStyle(index)}
                         >
                           <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">
                             {player.jersey}
@@ -247,10 +259,11 @@ function App() {
                   No players match that search.
                 </div>
               ) : (
-                filteredPlayers.map((player) => (
+                filteredPlayers.map((player, index) => (
                   <article
                     key={player.id}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm"
+                    className="animate-fade-in-up rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm"
+                    style={makeStaggerStyle(index)}
                   >
                     <div className="flex items-baseline justify-between">
                       <span className="text-lg font-semibold text-hoosier-red">#{player.jersey}</span>
