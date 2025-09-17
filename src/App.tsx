@@ -21,6 +21,12 @@ type SortConfig = {
 }
 
 const DEFAULT_SORT: SortConfig = { key: 'jersey', direction: 'asc' }
+const ROSTER_STORAGE_KEY = 'iu-football-roster-cache'
+
+type CachedRoster = {
+  players: Player[]
+  updatedAt: number
+}
 
 const parseWeight = (weight: string): number | null => {
   const match = weight.match(/\d+/)
@@ -131,6 +137,26 @@ const comparePlayers = (a: Player, b: Player, config: SortConfig): number => {
   )
 }
 
+const isValidPlayerRecord = (value: unknown): value is Player => {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const record = value as Record<string, unknown>
+  const requiredKeys: Array<keyof Player> = [
+    'id',
+    'displayName',
+    'jersey',
+    'position',
+    'experience',
+    'height',
+    'weight',
+    'hometown',
+  ]
+
+  return requiredKeys.every((key) => typeof record[key] === 'string')
+}
+
 const ROSTER_ENDPOINT =
   'https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams/84?enable=roster'
 
@@ -140,6 +166,8 @@ function App() {
   const [sortConfig, setSortConfig] = useState<SortConfig>(DEFAULT_SORT)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null)
 
   const makeStaggerStyle = (index: number): CSSProperties => ({
     animationDelay: `${Math.min(index, 12) * 45}ms`,
@@ -170,11 +198,62 @@ function App() {
 
   useEffect(() => {
     const controller = new AbortController()
+    let cachedPlayers: Player[] = []
+    let cachedTimestamp: number | null = null
+
+    const hydrateFromCache = () => {
+      if (typeof window === 'undefined') {
+        return
+      }
+
+      try {
+        const raw = window.localStorage.getItem(ROSTER_STORAGE_KEY)
+
+        if (!raw) {
+          return
+        }
+
+        const parsed = JSON.parse(raw) as Partial<CachedRoster>
+        const storedPlayers = Array.isArray(parsed.players)
+          ? parsed.players.filter(isValidPlayerRecord)
+          : []
+
+        if (!storedPlayers.length) {
+          return
+        }
+
+        cachedPlayers = storedPlayers
+        cachedTimestamp =
+          typeof parsed.updatedAt === 'number' && Number.isFinite(parsed.updatedAt)
+            ? parsed.updatedAt
+            : null
+
+        setPlayers(storedPlayers)
+        setError(null)
+        setLoading(false)
+        setNotice(null)
+
+        if (cachedTimestamp) {
+          setLastUpdated(cachedTimestamp)
+        } else {
+          setLastUpdated(null)
+        }
+      } catch (cacheError) {
+        console.error('Unable to read cached roster', cacheError)
+      }
+    }
+
+    hydrateFromCache()
 
     async function loadRoster() {
       try {
         setError(null)
-        setLoading(true)
+        setNotice(null)
+
+        if (!cachedPlayers.length) {
+          setLoading(true)
+        }
+
         const response = await fetch(ROSTER_ENDPOINT, { signal: controller.signal })
 
         if (!response.ok) {
@@ -245,14 +324,40 @@ function App() {
           return aNumber - bNumber
         })
 
+        cachedPlayers = sorted
+        const timestamp = Date.now()
+        cachedTimestamp = timestamp
+
         setPlayers(sorted)
+        setLastUpdated(timestamp)
+
+        if (typeof window !== 'undefined') {
+          try {
+            const payloadToStore: CachedRoster = { players: sorted, updatedAt: timestamp }
+            window.localStorage.setItem(ROSTER_STORAGE_KEY, JSON.stringify(payloadToStore))
+          } catch (storageError) {
+            console.error('Unable to cache roster', storageError)
+          }
+        }
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') {
           return
         }
 
         console.error('Unable to load roster', err)
-        setError('Unable to load the roster right now. Please try again later.')
+
+        if (!cachedPlayers.length) {
+          setError('Unable to load the roster right now. Please try again later.')
+          setLastUpdated(null)
+        } else {
+          setNotice('Showing the last saved roster. Live data is currently unavailable.')
+
+          if (cachedTimestamp) {
+            setLastUpdated(cachedTimestamp)
+          } else {
+            setLastUpdated(null)
+          }
+        }
       } finally {
         setLoading(false)
       }
@@ -285,6 +390,22 @@ function App() {
     return [...baseList].sort((a, b) => comparePlayers(a, b, sortConfig))
   }, [players, searchTerm, sortConfig])
 
+  const formattedLastUpdated = useMemo(() => {
+    if (!lastUpdated) {
+      return null
+    }
+
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(new Date(lastUpdated))
+    } catch (formatError) {
+      console.error('Unable to format roster timestamp', formatError)
+      return new Date(lastUpdated).toLocaleString()
+    }
+  }, [lastUpdated])
+
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-8 px-4 py-8 sm:px-8 lg:px-12">
       <header
@@ -305,15 +426,38 @@ function App() {
 
         <label className="w-full max-w-sm space-y-2 text-sm font-semibold text-slate-600">
           <span className="block uppercase tracking-wide">Search players</span>
-          <input
-            type="search"
-            name="roster-search"
-            autoComplete="off"
-            placeholder="Name, number, position, class, hometown..."
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 text-base font-normal text-slate-900 shadow-sm transition focus:border-hoosier-red focus:outline-none focus:ring-4 focus:ring-hoosier-red/15"
-          />
+          <div className="relative">
+            <input
+              type="search"
+              name="roster-search"
+              autoComplete="off"
+              placeholder="Name, number, position, class, hometown..."
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 pr-12 text-base font-normal text-slate-900 shadow-sm transition focus:border-hoosier-red focus:outline-none focus:ring-4 focus:ring-hoosier-red/15"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute inset-y-0 right-2 inline-flex items-center justify-center rounded-xl bg-white/60 px-2 text-slate-400 transition hover:text-hoosier-red focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hoosier-red"
+                aria-label="Clear search"
+              >
+                <svg
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  aria-hidden="true"
+                  className="h-4 w-4"
+                >
+                  <path
+                    fillRule="evenodd"
+                    clipRule="evenodd"
+                    d="M5.22 5.22a.75.75 0 0 1 1.06 0L10 8.94l3.72-3.72a.75.75 0 1 1 1.06 1.06L11.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06L10 11.06l-3.72 3.72a.75.75 0 1 1-1.06-1.06L8.94 10 5.22 6.28a.75.75 0 0 1 0-1.06Z"
+                  />
+                </svg>
+              </button>
+            )}
+          </div>
         </label>
       </header>
 
@@ -327,6 +471,12 @@ function App() {
           </div>
         )}
 
+        {!loading && notice && !error && (
+          <div className="animate-fade-in-up mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900" style={{ animationDelay: '180ms' }}>
+            {notice}
+          </div>
+        )}
+
         {!loading && error && (
           <div className="animate-fade-in-up flex h-40 items-center justify-center text-center text-base font-semibold text-hoosier-red">
             {error}
@@ -335,6 +485,12 @@ function App() {
 
         {!loading && !error && (
           <div className="space-y-6">
+            {formattedLastUpdated && (
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
+                Last updated {formattedLastUpdated}
+              </p>
+            )}
+
             <div className="hidden md:block">
               <div className="animate-fade-in-up max-h-[65vh] overflow-auto rounded-2xl border border-slate-200" style={{ animationDelay: '220ms' }}>
                 <table className="min-w-full text-left text-sm text-slate-700">
