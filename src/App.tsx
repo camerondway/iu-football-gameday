@@ -12,18 +12,161 @@ type Player = {
   hometown: string
 }
 
+type SortKey = 'jersey' | 'displayName' | 'position' | 'experience' | 'height' | 'weight' | 'hometown'
+type SortDirection = 'asc' | 'desc'
+
+type SortConfig = {
+  key: SortKey
+  direction: SortDirection
+}
+
+const DEFAULT_SORT: SortConfig = { key: 'jersey', direction: 'asc' }
+
+const parseWeight = (weight: string): number | null => {
+  const match = weight.match(/\d+/)
+  return match ? Number.parseInt(match[0] ?? '', 10) : null
+}
+
+const parseHeight = (height: string): number | null => {
+  const trimmed = height.trim()
+  const match = trimmed.match(/^(\d+)\s*'?\s*(\d+)?/)
+
+  if (!match) {
+    return null
+  }
+
+  const feet = Number.parseInt(match[1] ?? '', 10)
+  const inches = match[2] ? Number.parseInt(match[2] ?? '', 10) : 0
+
+  if (Number.isNaN(feet) || Number.isNaN(inches)) {
+    return null
+  }
+
+  return feet * 12 + inches
+}
+
+const comparePlayers = (a: Player, b: Player, config: SortConfig): number => {
+  const { key, direction } = config
+  const modifier = direction === 'asc' ? 1 : -1
+
+  if (key === 'jersey') {
+    const jerseyA = Number.parseInt(a.jersey, 10)
+    const jerseyB = Number.parseInt(b.jersey, 10)
+    const hasJerseyA = Number.isFinite(jerseyA)
+    const hasJerseyB = Number.isFinite(jerseyB)
+
+    if (!hasJerseyA && !hasJerseyB) {
+      return (
+        a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }) * modifier
+      )
+    }
+
+    if (!hasJerseyA) {
+      return direction === 'asc' ? 1 : -1
+    }
+
+    if (!hasJerseyB) {
+      return direction === 'asc' ? -1 : 1
+    }
+
+    if (jerseyA !== jerseyB) {
+      return (jerseyA - jerseyB) * modifier
+    }
+  }
+
+  if (key === 'weight') {
+    const weightA = parseWeight(a.weight)
+    const weightB = parseWeight(b.weight)
+
+    if (weightA === null && weightB === null) {
+      return (
+        a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }) * modifier
+      )
+    }
+
+    if (weightA === null) {
+      return direction === 'asc' ? 1 : -1
+    }
+
+    if (weightB === null) {
+      return direction === 'asc' ? -1 : 1
+    }
+
+    if (weightA !== weightB) {
+      return (weightA - weightB) * modifier
+    }
+  }
+
+  if (key === 'height') {
+    const heightA = parseHeight(a.height)
+    const heightB = parseHeight(b.height)
+
+    if (heightA === null && heightB === null) {
+      return (
+        a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }) * modifier
+      )
+    }
+
+    if (heightA === null) {
+      return direction === 'asc' ? 1 : -1
+    }
+
+    if (heightB === null) {
+      return direction === 'asc' ? -1 : 1
+    }
+
+    if (heightA !== heightB) {
+      return (heightA - heightB) * modifier
+    }
+  }
+
+  const baseComparison = a[key].localeCompare(b[key], undefined, { sensitivity: 'base' })
+
+  if (baseComparison !== 0) {
+    return baseComparison * modifier
+  }
+
+  return (
+    a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }) * modifier
+  )
+}
+
 const ROSTER_ENDPOINT =
   'https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams/84?enable=roster'
 
 function App() {
   const [players, setPlayers] = useState<Player[]>([])
   const [searchTerm, setSearchTerm] = useState('')
+  const [sortConfig, setSortConfig] = useState<SortConfig>(DEFAULT_SORT)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const makeStaggerStyle = (index: number): CSSProperties => ({
     animationDelay: `${Math.min(index, 12) * 45}ms`,
   })
+
+  const columns: Array<{ key: SortKey; label: string }> = [
+    { key: 'jersey', label: '#' },
+    { key: 'displayName', label: 'Name' },
+    { key: 'position', label: 'Pos' },
+    { key: 'experience', label: 'Class' },
+    { key: 'height', label: 'Height' },
+    { key: 'weight', label: 'Weight' },
+    { key: 'hometown', label: 'Hometown' },
+  ]
+
+  const handleSort = (key: SortKey) => {
+    setSortConfig((current) => {
+      if (current.key === key) {
+        return {
+          key,
+          direction: current.direction === 'asc' ? 'desc' : 'asc',
+        }
+      }
+
+      return { key, direction: 'asc' }
+    })
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -123,24 +266,24 @@ function App() {
   const filteredPlayers = useMemo(() => {
     const normalizedQuery = searchTerm.trim().toLowerCase()
 
-    if (!normalizedQuery) {
-      return players
-    }
+    const baseList = normalizedQuery
+      ? players.filter((player) => {
+          const searchable = [
+            player.displayName,
+            player.jersey,
+            player.position,
+            player.experience,
+            player.hometown,
+          ]
+            .join(' ')
+            .toLowerCase()
 
-    return players.filter((player) => {
-      const searchable = [
-        player.displayName,
-        player.jersey,
-        player.position,
-        player.experience,
-        player.hometown,
-      ]
-        .join(' ')
-        .toLowerCase()
+          return searchable.includes(normalizedQuery)
+        })
+      : players
 
-      return searchable.includes(normalizedQuery)
-    })
-  }, [players, searchTerm])
+    return [...baseList].sort((a, b) => comparePlayers(a, b, sortConfig))
+  }, [players, searchTerm, sortConfig])
 
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-8 px-4 py-8 sm:px-8 lg:px-12">
@@ -197,27 +340,41 @@ function App() {
                 <table className="min-w-full text-left text-sm text-slate-700">
                   <thead>
                     <tr className="bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                      <th scope="col" className="sticky top-0 z-10 px-4 py-3">
-                        #
-                      </th>
-                      <th scope="col" className="sticky top-0 z-10 px-4 py-3">
-                        Name
-                      </th>
-                      <th scope="col" className="sticky top-0 z-10 px-4 py-3">
-                        Pos
-                      </th>
-                      <th scope="col" className="sticky top-0 z-10 px-4 py-3">
-                        Class
-                      </th>
-                      <th scope="col" className="sticky top-0 z-10 px-4 py-3">
-                        Height
-                      </th>
-                      <th scope="col" className="sticky top-0 z-10 px-4 py-3">
-                        Weight
-                      </th>
-                      <th scope="col" className="sticky top-0 z-10 px-4 py-3">
-                        Hometown
-                      </th>
+                      {columns.map((column) => {
+                        const isActive = sortConfig.key === column.key
+                        const ariaSort: 'ascending' | 'descending' | 'none' = isActive
+                          ? sortConfig.direction === 'asc'
+                            ? 'ascending'
+                            : 'descending'
+                          : 'none'
+
+                        return (
+                          <th
+                            key={column.key}
+                            scope="col"
+                            className="sticky top-0 z-10 px-4 py-3"
+                            aria-sort={ariaSort}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => handleSort(column.key)}
+                              aria-label={
+                                isActive
+                                  ? `Sort by ${column.label}, ${
+                                      sortConfig.direction === 'asc' ? 'ascending' : 'descending'
+                                    }`
+                                  : `Sort by ${column.label}`
+                              }
+                              className="flex w-full items-center justify-between gap-2 text-left uppercase tracking-wider text-slate-500 transition hover:text-slate-700 focus:outline-none focus-visible:text-slate-700 focus-visible:ring-2 focus-visible:ring-hoosier-red/40"
+                            >
+                              <span>{column.label}</span>
+                              <span className="text-[0.65rem] text-slate-400" aria-hidden="true">
+                                {isActive ? (sortConfig.direction === 'asc' ? '▲' : '▼') : '▲▼'}
+                              </span>
+                            </button>
+                          </th>
+                        )
+                      })}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
